@@ -1,0 +1,2 @@
+feature: dynamic-entity-ingestion
+mode: stateless_hexagonal

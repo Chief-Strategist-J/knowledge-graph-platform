@@ -1,0 +1,2 @@
+feature: idempotent-graph-writes
+mode: stateless_hexagonal
