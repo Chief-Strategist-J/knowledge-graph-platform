@@ -1,1 +1,18 @@
-# Package-specific local development build with hot reload
+# syntax=docker/dockerfile:1.7
+ARG BUILDER_IMAGE=golang:1.23.2-bookworm@sha256:ad7051f47dd8439396263de334aa1d11ff60f1b2b874404c997ae89c898b9487
+FROM ${BUILDER_IMAGE} AS dev
+
+WORKDIR /workspace
+
+RUN go install github.com/air-verse/air@v1.52.3
+
+COPY go.mod ./
+RUN if [ -f go.sum ]; then cp go.sum .; fi
+RUN go mod download || true
+
+COPY . .
+
+ENV CGO_ENABLED=0
+EXPOSE 8000 9090
+
+CMD ["air", "-c", ".air.toml"]

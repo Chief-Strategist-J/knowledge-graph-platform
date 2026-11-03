@@ -1,1 +1,10 @@
-environment = "dev"
+environment             = "dev"
+aws_region              = "us-east-1"
+project_name            = "knowledge-graph-platform"
+vpc_cidr                = "10.10.0.0/16"
+db_instance_class       = "db.t4g.medium"
+redis_node_type         = "cache.t4g.medium"
+eks_node_instance_types = ["t4g.xlarge"]
+eks_min_size            = 2
+eks_max_size            = 4
+eks_desired_size        = 2

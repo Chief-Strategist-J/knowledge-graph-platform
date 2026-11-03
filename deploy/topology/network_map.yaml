@@ -1,8 +1,84 @@
-# Declares hostnames, ports & protocols for sibling services
+version: "1"
 services:
-  - name: py-service-1
+  # Edge Proxy / Gateway
+  - name: proxy
+    port: 80
+    host_port: 8000
+    protocol: HTTP/1.1, HTTP/2
+    role: "Edge reverse proxy routing to Go platform API and documentation"
+  
+  # Core Platform Go API
+  - name: platform-api
+    port: 8000
+    protocol: HTTP/1.1, HTTP/2, REST, ConnectRPC
+    role: "Primary Go platform API, Graph query and management"
+
+  # Core Platform Go gRPC/ConnectRPC Internal
+  - name: platform-grpc
+    port: 9090
+    protocol: gRPC, ConnectRPC
+    role: "High-performance internal RPC endpoint"
+
+  # Python Docling Ingestion Worker
+  - name: docling-ingestion-worker
     port: 8001
-  - name: py-service-2
-    port: 8002
-  - name: node-service-1
+    protocol: HTTP/1.1
+    role: "Document extraction, parsing with Docling, BGE-M3 embedding ingestion"
+
+  # Relational Database
+  - name: postgres
+    port: 5432
+    protocol: PostgreSQL
+    role: "Metadata, tenant configuration, job state (isolated network)"
+
+  # Graph Database
+  - name: neo4j
+    port: 7687
+    protocol: Bolt
+    role: "Neo4j graph database relationship storage & GDS analytics"
+
+  # Search Engine
+  - name: opensearch
+    port: 9200
+    protocol: HTTP/REST
+    role: "Full-text and keyword search retrieval"
+
+  # Vector Database
+  - name: qdrant
+    port: 6333
+    protocol: HTTP/REST, gRPC (6334)
+    role: "Semantic vector retrieval"
+
+  # Event Streaming
+  - name: kafka
+    port: 9092
+    protocol: Kafka
+    role: "Asynchronous graph updates streaming pipeline"
+
+  # Cache
+  - name: redis
+    port: 6379
+    protocol: Redis RESP
+    role: "Query and metadata caching"
+
+  # Object Storage
+  - name: minio
+    port: 9000
+    protocol: S3 API
+    role: "Raw documents and graph ingestion artifacts"
+
+  # Observability
+  - name: otel-collector
+    port: 4317
+    protocol: OTLP gRPC
+    role: "OpenTelemetry pipeline traces and metrics collection"
+
+  - name: prometheus
+    port: 9090
+    protocol: HTTP
+    role: "Time-series metrics collection"
+
+  - name: grafana
     port: 3000
+    protocol: HTTP
+    role: "Operational monitoring dashboards"

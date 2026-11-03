@@ -1,4 +1,19 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+
+namespace: kg-prod
+
 resources:
   - ../../base
+
+patches:
+  - target:
+      kind: Deployment
+      name: knowledge-graph-platform
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: ghcr.io/knowledge-graph-platform/knowledge-graph-platform@sha256:4d603a1168f02f6efbaee5e2df808b8db4e43cf6dd53ca2f6fef95b1ad2c3771

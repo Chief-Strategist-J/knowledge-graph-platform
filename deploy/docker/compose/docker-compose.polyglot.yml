@@ -1,2 +1,119 @@
-# Multi-package coordination runner (2 Python + 1 Node.js)
-version: '3.8'
+include:
+  - path: docker-compose.infra.yml
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  init: true
+  pids_limit: 256
+  restart: unless-stopped
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-app-common: &app-common
+  <<: *hardening
+  networks: [frontend, backend]
+  tmpfs: [/tmp]
+  stop_grace_period: 30s
+  ulimits:
+    nofile:
+      soft: 65535
+      hard: 65535
+
+services:
+  # DB Schema Migration Job
+  migrate:
+    <<: *hardening
+    restart: "no"
+    image: ${REGISTRY:?}/knowledge-graph-platform@${APP_DIGEST:?set APP_DIGEST}
+    command: ["migrate", "up"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      neo4j:    { condition: service_healthy }
+    networks: [backend]
+    secrets: [pg_password]
+    tmpfs: [/tmp]
+
+  # Core Go Platform Service
+  platform-api:
+    <<: *app-common
+    image: ${REGISTRY:?}/knowledge-graph-platform@${APP_DIGEST:?set APP_DIGEST}
+    depends_on:
+      postgres:   { condition: service_healthy, restart: true }
+      neo4j:      { condition: service_healthy, restart: true }
+      qdrant:     { condition: service_healthy, restart: true }
+      opensearch: { condition: service_healthy, restart: true }
+      kafka:      { condition: service_healthy, restart: true }
+      redis:      { condition: service_healthy, restart: true }
+      minio:      { condition: service_healthy, restart: true }
+      migrate:    { condition: service_completed_successfully }
+    expose:
+      - "8000"
+      - "9090"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: knowledge_graph
+      POSTGRES_USER: kg_admin
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+      NEO4J_URI: bolt://neo4j:7687
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6334"
+      OPENSEARCH_URL: https://opensearch:9200
+      KAFKA_BROKERS: kafka:9092
+      REDIS_HOST: redis:6379
+      MINIO_ENDPOINT: minio:9000
+      GOMEMLIMIT: "768MiB"
+    secrets: [pg_password]
+    tmpfs: [/tmp]
+    healthcheck:
+      test: ["CMD", "/app/platform-svc", "healthcheck"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1024M
+        reservations:
+          memory: 512M
+
+  # Python Ingestion Worker (Docling + BGE-M3 Embeddings)
+  docling-worker:
+    <<: *hardening
+    image: ${REGISTRY:?}/knowledge-graph-docling-worker@${WORKER_DIGEST:?set WORKER_DIGEST}
+    depends_on:
+      kafka:  { condition: service_healthy, restart: true }
+      minio:  { condition: service_healthy, restart: true }
+      qdrant: { condition: service_healthy, restart: true }
+      neo4j:  { condition: service_healthy, restart: true }
+    networks: [backend]
+    expose:
+      - "8001"
+    environment:
+      PYTHONUNBUFFERED: "1"
+      KAFKA_BROKERS: kafka:9092
+      MINIO_ENDPOINT: minio:9000
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6334"
+      NEO4J_URI: bolt://neo4j:7687
+    tmpfs: [/tmp]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/healthz',timeout=2).status==200 else 1)"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
+        reservations:
+          memory: 1024M

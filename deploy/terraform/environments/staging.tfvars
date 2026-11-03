@@ -1,1 +1,10 @@
-environment = "staging"
+environment             = "staging"
+aws_region              = "us-east-1"
+project_name            = "knowledge-graph-platform"
+vpc_cidr                = "10.20.0.0/16"
+db_instance_class       = "db.r6g.large"
+redis_node_type         = "cache.r6g.large"
+eks_node_instance_types = ["m6i.xlarge"]
+eks_min_size            = 2
+eks_max_size            = 6
+eks_desired_size        = 3

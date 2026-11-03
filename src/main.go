@@ -37,9 +37,14 @@ func main() {
 	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	publicPort := os.Getenv("PORT")
+	if publicPort == "" {
+		publicPort = "8000"
+	}
+
 	cfg := Config{
-		PublicAddr: ":8080",
-		AdminAddr:  "127.0.0.1:8081",
+		PublicAddr: ":" + publicPort,
+		AdminAddr:  "0.0.0.0:8081",
 	}
 
 	graphRepo := graphAdapters.NewMemoryGraphRepositoryAdapter()
@@ -56,6 +61,14 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ready"}`))
 	})
+	adminMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+	adminMux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ready"}`))
+	})
 
 	adminServer := &http.Server{
 		Addr:         cfg.AdminAddr,
@@ -65,6 +78,14 @@ func main() {
 	}
 
 	publicMux := http.NewServeMux()
+	publicMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+	publicMux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ready"}`))
+	})
 	graphRouter.RegisterRoutes(publicMux)
 
 	publicServer := &http.Server{

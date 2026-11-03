@@ -1,1 +1,10 @@
-environment = "prod"
+environment             = "prod"
+aws_region              = "us-east-1"
+project_name            = "knowledge-graph-platform"
+vpc_cidr                = "10.30.0.0/16"
+db_instance_class       = "db.r6g.2xlarge"
+redis_node_type         = "cache.r6g.xlarge"
+eks_node_instance_types = ["m6i.2xlarge", "m6a.2xlarge"]
+eks_min_size            = 3
+eks_max_size            = 20
+eks_desired_size        = 6

@@ -1,5 +1,21 @@
-# Injected environment configurations
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: knowledge-graph-platform-config
+  labels:
+    app.kubernetes.io/name: knowledge-graph-platform
+data:
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+  POSTGRES_HOST: "postgres.storage.svc.cluster.local"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "knowledge_graph"
+  POSTGRES_USER: "kg_admin"
+  NEO4J_URI: "bolt://neo4j.storage.svc.cluster.local:7687"
+  QDRANT_HOST: "qdrant.storage.svc.cluster.local"
+  QDRANT_PORT: "6334"
+  OPENSEARCH_URL: "https://opensearch.storage.svc.cluster.local:9200"
+  KAFKA_BROKERS: "kafka.storage.svc.cluster.local:9092"
+  REDIS_HOST: "redis.storage.svc.cluster.local:6379"
+  MINIO_ENDPOINT: "http://minio.storage.svc.cluster.local:9000"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4317"
