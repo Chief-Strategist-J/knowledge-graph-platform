@@ -56,6 +56,31 @@ def clean_docker():
     print("[SUCCESS] Docker container environment cleaned.")
 
 
+def delete_kind_cluster():
+    print(f"[INFO] Checking KinD cluster status for '{CLUSTER_NAME}'...")
+    res = run_command([KIND_BIN, "get", "clusters"], capture=True)
+    if CLUSTER_NAME in res.stdout:
+        print(f"[INFO] Deleting KinD cluster '{CLUSTER_NAME}'...")
+        run_command([KIND_BIN, "delete", "cluster", "--name", CLUSTER_NAME])
+        print(f"[SUCCESS] KinD cluster '{CLUSTER_NAME}' removed.")
+    else:
+        print(f"[INFO] Cluster '{CLUSTER_NAME}' does not exist.")
+
+
+def clean_all():
+    print("=== STOPPING AND REMOVING ALL CONTAINERS AND KUBERNETES INFRASTRUCTURE ===")
+    delete_kind_cluster()
+    clean_docker()
+    print("[SUCCESS] All Kubernetes and Docker resources stopped and removed.")
+
+    run_command([DOCKER_BIN, "compose", "-f", COMPOSE_FILE, "down", "--remove-orphans"], check=False)
+
+    print("[INFO] Removing untagged and stopped container artifacts...")
+    run_command([DOCKER_BIN, "container", "prune", "-f"], check=False)
+
+    print("[SUCCESS] Docker container environment cleaned.")
+
+
 def create_kind_cluster():
     print(f"[INFO] Checking KinD cluster status for '{CLUSTER_NAME}'...")
     res = run_command([KIND_BIN, "get", "clusters"], capture=True)
@@ -303,13 +328,17 @@ def main():
     parser = argparse.ArgumentParser(description="Knowledge Graph Platform Kubernetes Orchestrator")
     parser.add_argument(
         "action",
-        choices=["clean-docker", "setup-cluster", "build-load", "deploy", "restart", "verify", "inject-telemetry", "port-forward-grafana", "status", "all"],
+        choices=["clean-docker", "delete-cluster", "clean-all", "setup-cluster", "build-load", "deploy", "restart", "verify", "inject-telemetry", "port-forward-grafana", "status", "all"],
         help="Action to perform",
     )
     args = parser.parse_args()
 
     if args.action == "clean-docker":
         clean_docker()
+    elif args.action == "delete-cluster":
+        delete_kind_cluster()
+    elif args.action == "clean-all":
+        clean_all()
     elif args.action == "setup-cluster":
         create_kind_cluster()
     elif args.action == "build-load":
