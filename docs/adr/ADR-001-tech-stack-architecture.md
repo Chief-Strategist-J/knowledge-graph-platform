@@ -7,6 +7,100 @@
 
 ---
 
+## ── SYSTEM ARCHITECTURE & TOPOLOGY DIAGRAMS ─────────────────────────────────
+
+### 1. End-to-End Enterprise Architecture & Ingestion Flow
+
+```mermaid
+flowchart TD
+    subgraph Ingestion["Ingestion & Document Pipeline"]
+        DOCS[("Raw Documents (PDF, Docx, HTML)")] --> MINIO[("MinIO S3 Object Store")]
+        MINIO --> DOCLING["Docling Worker (Python 3.12)\n- Table & Layout Extraction\n- BGE-M3 Embeddings"]
+        DOCLING --> KAFKA[("Apache Kafka 3.8 (KRaft)\nTopics: raw-docs, entity-events, cdc-events")]
+    end
+
+    subgraph CoreServices["Stateless Application Layer (K8s / KinD)"]
+        CLIENT["Client / UI / Upstream Services"] --> INGRESS["NGINX Ingress Controller\n(Port 80/443 -> 8000)"]
+        INGRESS --> GO_API["Knowledge Graph Platform (Go 1.23)\n- ConnectRPC & REST APIs (8000/9090)\n- Multi-Hop Graph Traversal Engine\n- Non-Root UID 10001 | GOMEMLIMIT"]
+        KAFKA --> GO_API
+    end
+
+    subgraph DataPlane["Multi-Model Storage & Retrieval Plane"]
+        GO_API --> PG[("PostgreSQL 16 (ACID Metadata)\n- Users, Tenants, Ontologies\n- Logical CDC Enabled")]
+        PG --> DEBEZIUM["Debezium Connect (CDC)"]
+        DEBEZIUM --> KAFKA
+        
+        GO_API --> NEO4J[("Neo4j 5.23 + GDS\n- Index-Free Adjacency\n- PageRank & Louvain Community Detection")]
+        GO_API --> QDRANT[("Qdrant Vector Engine\n- Dense HNSW Vector Index\n- Fast Cosine / Dot Product Filtering")]
+        GO_API --> OPENSEARCH[("OpenSearch 2.16\n- Distributed BM25 Lexical Search\n- Inverted Keyword Index")]
+        GO_API --> REDIS[("Redis 7.4\n- Traversal Caching & Rate Limiting")]
+    end
+
+    subgraph ObservabilityPlane["Full-Stack Observability & Telemetry Plane"]
+        GO_API -.->|OTLP Traces / Metrics| OTEL["OpenTelemetry Collector"]
+        DOCLING -.->|OTLP Logs / Spans| OTEL
+        OTEL --> TEMPO[("Grafana Tempo\n- Distributed Tracing (OTLP/TraceQL)")]
+        OTEL --> PROMETHEUS[("Prometheus\n- Metrics & HPA Target (9090)")]
+        OTEL --> LOKI[("Grafana Loki\n- Structured Logs & Trace Correlation (3100)")]
+        
+        GRAFANA["Grafana UI (Port 13000)\n- Dashboards & Unified Explorer"]
+        GRAFANA --> TEMPO
+        GRAFANA --> PROMETHEUS
+        GRAFANA --> LOKI
+        GRAFANA --> PG
+    end
+```
+
+---
+
+### 2. Failure-Isolated Hybrid GraphRAG Query Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Client Application
+    participant GoAPI as Knowledge Graph Platform (Go 1.23)
+    participant Redis as Redis Cache
+    participant Qdrant as Qdrant Vector Engine
+    participant Neo4j as Neo4j 5.23 + GDS
+    participant OpenSearch as OpenSearch 2.16
+    participant OTel as OpenTelemetry Collector
+
+    User->>GoAPI: POST /api/v1/graph/query (GraphRAG prompt, semantic filters)
+    GoAPI->>OTel: Start trace span (TraceID, SpanID)
+    
+    GoAPI->>Redis: Check query cache
+    alt Cache Hit
+        Redis-->>GoAPI: Return cached subgraph response
+    else Cache Miss
+        par Step 1: Semantic & Lexical Candidate Retrieval
+            GoAPI->>Qdrant: Query dense vectors (Cosine HNSW, top_k=50)
+            Qdrant-->>GoAPI: Matched entity IDs & vector scores
+        and
+            GoAPI->>OpenSearch: Query keywords (BM25 lexical search)
+            OpenSearch-->>GoAPI: Matched document chunks & relevance
+        end
+
+        GoAPI->>GoAPI: Reciprocal Rank Fusion (RRF) & seed entity selection
+
+        critical Step 2: Multi-Hop Structural Traversal
+            GoAPI->>Neo4j: Execute bounded Cypher traversal (hops <= 3, GDS PageRank)
+            alt Traversal Timeout / Memory Bounded
+                Neo4j-->>GoAPI: Degraded partial graph within budget
+            else Traversal Success
+                Neo4j-->>GoAPI: Multi-hop connected subgraph & edge attributes
+            end
+        end
+
+        GoAPI->>Redis: Store materialized subgraph with TTL (300s)
+    end
+
+    GoAPI->>OTel: End span with attributes (status=200, entities=420)
+    GoAPI-->>User: HTTP 200: Synthesized GraphRAG Context
+```
+
+---
+
 ## ── PROBLEM ──────────────────────────────────────────────────────────────────
 How should the Knowledge Graph Platform partition ingestion, traversal, vector similarity, keyword search, metadata storage, and continuous observability into a resilient, scalable, and failure-bounded architecture capable of sub-second multi-hop GraphRAG queries across enterprise datasets?
 
@@ -138,7 +232,7 @@ How should the Knowledge Graph Platform partition ingestion, traversal, vector s
 
 ### What Becomes Easier?
 1. **Sub-second Hybrid GraphRAG:** Graph queries combine vector relevance (Qdrant), keyword precision (OpenSearch), and multi-hop relationship depth (Neo4j) without runtime cross-talk.
-2. **Deterministic Infrastructure Lifecycle:** A single unified script (`infra-manager.py`) provisions, tests, benchmarks, and chaos-verifies the entire platform in one command.
+2. **Deterministic Infrastructure Lifecycle:** A single unified script (`infra-manager.py` / `k8s-manager.py`) provisions, tests, benchmarks, and chaos-verifies the entire platform in one command.
 3. **Instant Debugging:** Clicking any trace in Grafana Tempo navigates directly to its exact correlated structured logs in Loki.
 
 ### What Becomes Harder?
