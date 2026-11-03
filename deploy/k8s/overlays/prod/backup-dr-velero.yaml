@@ -1,0 +1,62 @@
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: kg-prod-daily-backup
+  namespace: velero
+  labels:
+    app.kubernetes.io/part-of: knowledge-graph-system
+    app.kubernetes.io/environment: prod
+spec:
+  schedule: "0 2 * * *" # Every day at 02:00 UTC
+  template:
+    includedNamespaces:
+      - kg-prod
+    snapshotVolumes: true
+    storageLocation: default
+    volumeSnapshotLocations:
+      - aws-us-east-1
+    ttl: 720h0m0s # 30 days retention
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: neo4j-snapshot-backup
+  namespace: kg-prod
+spec:
+  schedule: "0 3 * * *" # Daily at 03:00 UTC
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+          restartPolicy: OnFailure
+          containers:
+            - name: neo4j-backup
+              image: neo4j:5.23.0-enterprise
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  DATE=$(date +%Y%m%d_%H%M%S)
+                  BACKUP_FILE="/tmp/neo4j_backup_${DATE}.dump"
+                  echo "[INFO] Running Neo4j database dump..."
+                  neo4j-admin database dump neo4j --to-path=/tmp/
+                  echo "[INFO] Uploading dump to AWS S3 backup bucket..."
+                  aws s3 cp /tmp/neo4j.dump s3://${BACKUP_S3_BUCKET}/neo4j/neo4j_${DATE}.dump --sse aws:kms
+                  echo "[SUCCESS] Neo4j backup completed successfully."
+              env:
+                - name: BACKUP_S3_BUCKET
+                  value: "kg-platform-prod-backups"
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "1Gi"
+                limits:
+                  cpu: "2000m"
+                  memory: "4Gi"

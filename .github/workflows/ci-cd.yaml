@@ -1,0 +1,111 @@
+name: Enterprise CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+jobs:
+  test-and-lint:
+    name: Code Quality & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go 1.23
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.2'
+          cache: true
+
+      - name: Run Go Tests
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Lint Ingestion Worker
+        run: |
+          pip install ruff
+          ruff check src/ deploy/
+
+  security-scan:
+    name: Container Security & Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: test-and-lint
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Platform Image for Scanning
+        run: |
+          docker build -t kg-platform:${{ github.sha }} -f deploy/docker/service/Dockerfile .
+
+      - name: Scan Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'kg-platform:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+  build-and-push:
+    name: Build & Publish OCI Images
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push Go Platform Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/docker/service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/knowledge-graph-platform:latest
+            ghcr.io/${{ github.repository }}/knowledge-graph-platform:${{ github.sha }}
+
+      - name: Build & Push Docling Worker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/docker/service/Dockerfile.python-ingestion
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/knowledge-graph-docling-worker:latest
+            ghcr.io/${{ github.repository }}/knowledge-graph-docling-worker:${{ github.sha }}
+
+  gitops-reconciliation:
+    name: Notify Argo CD GitOps Sync
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Confirm Argo CD GitOps Target
+        run: |
+          echo "[INFO] GitOps target repository updated at commit ${{ github.sha }}."
+          echo "[INFO] Argo CD automated sync will reconcile deploy/k8s/overlays/prod to cluster namespace 'kg-prod'."

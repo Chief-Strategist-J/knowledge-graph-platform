@@ -5,8 +5,16 @@ namespace: kg-prod
 
 resources:
   - ../../base
+  - storageclass-gp3.yaml
+  - external-secrets.yaml
+  - qdrant-statefulset.yaml
+  - observability-statefulsets.yaml
+  - alb-ingress.yaml
+  - worker-scaling.yaml
+  - backup-dr-velero.yaml
 
 patches:
+  # 1. Scale Platform API to 3 Replicas
   - target:
       kind: Deployment
       name: knowledge-graph-platform
@@ -16,4 +24,49 @@ patches:
         value: 3
       - op: replace
         path: /spec/template/spec/containers/0/image
-        value: ghcr.io/knowledge-graph-platform/knowledge-graph-platform@sha256:4d603a1168f02f6efbaee5e2df808b8db4e43cf6dd53ca2f6fef95b1ad2c3771
+        value: ghcr.io/knowledge-graph-platform/knowledge-graph-platform:1.0.0
+
+  # 2. Scale Debezium Connect to 3 Replicas
+  - target:
+      kind: Deployment
+      name: debezium-connect
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+
+  # 3. Scale Docling Ingestion Worker to 4 Replicas
+  - target:
+      kind: Deployment
+      name: docling-ingestion-worker
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 4
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "4Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "8Gi"
+
+  # 4. Wire Managed Backing Services into ConfigMap
+  - target:
+      kind: ConfigMap
+      name: knowledge-graph-platform-config
+    patch: |-
+      - op: replace
+        path: /data/APP_ENV
+        value: "production"
+      - op: replace
+        path: /data/POSTGRES_HOST
+        value: "kg-platform-prod-postgres.cz4xxxxxx.us-east-1.rds.amazonaws.com"
+      - op: replace
+        path: /data/KAFKA_BROKERS
+        value: "b-1.kg-prod-msk.xxxxxx.c2.kafka.us-east-1.amazonaws.com:9092,b-2.kg-prod-msk.xxxxxx.c2.kafka.us-east-1.amazonaws.com:9092"
+      - op: replace
+        path: /data/OPENSEARCH_URL
+        value: "https://search-kg-platform-prod-xxxxxx.us-east-1.es.amazonaws.com"
+      - op: replace
+        path: /data/QDRANT_HOST
+        value: "qdrant.kg-prod.svc.cluster.local"
